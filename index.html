@@ -1,20 +1,620 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>我的个人世界</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>随机编码生成器</title>
+    <!-- 引入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f2f5; margin: 0; }
-        .card { background: white; padding: 2rem; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
-        h1 { color: #333; }
-        p { color: #666; }
+        /* 设置全局字体和背景 */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+        /* 模态框背景，用于覆盖整个屏幕 */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        /* 隐藏滚动条但允许滚动 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
     </style>
 </head>
-<body>
-    <div class="card">
-        <h1>你好，世界！</h1>
-        <p>这是我的第一个个人网站。</p>
-        <p>正在建设中...</p>
+<body class="p-4 sm:p-8">
+
+    <div class="max-w-4xl mx-auto bg-white shadow-xl rounded-xl p-6 md:p-10">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">随机编码生成器</h1>
+        <p class="text-gray-500 mb-8">设置前缀、生成数量以及每个位置的随机抽取范围。系统将**确保编码不重复**，结果将按<span class="font-bold text-indigo-600">位置 1 排序，相同时按位置 2 排序</span>。</p>
+
+        <!-- 输入配置区 -->
+        <div class="grid md:grid-cols-2 gap-6 mb-8">
+            <!-- 编码数量和前缀 -->
+            <div class="space-y-4">
+                <div class="bg-gray-50 p-4 rounded-lg border">
+                    <label for="numCodes" class="block text-sm font-medium text-gray-700">生成数量 (NUM_CODES)</label>
+                    <input type="number" id="numCodes" value="20" min="1" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg border">
+                    <label for="prefix" class="block text-sm font-medium text-gray-700">编码前缀 (PREFIX)</label>
+                    <input type="text" id="prefix" value="B" maxlength="10" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                
+                <!-- 控制按钮 -->
+                <div class="flex space-x-3 mt-4">
+                    <button id="addPositionButton" onclick="addPosition()"
+                            class="flex-1 py-2 text-white bg-green-500 rounded-lg shadow-md hover:bg-green-600 transition disabled:opacity-50">
+                        + 添加位置
+                    </button>
+                    <button id="removePositionButton" onclick="removePosition()" disabled
+                            class="flex-1 py-2 text-white bg-red-500 rounded-lg shadow-md hover:bg-red-600 transition disabled:opacity-50">
+                        - 移除位置
+                    </button>
+                </div>
+                <p id="positionCount" class="text-sm text-gray-500 text-center">当前位置数: 3</p>
+            </div>
+
+            <!-- 动态范围设置区容器 -->
+            <div id="rangesContainer" class="space-y-4 max-h-96 overflow-y-auto pr-2 no-scrollbar">
+                <!-- 位置输入将由 JavaScript 动态生成 -->
+            </div>
+        </div>
+
+        <!-- 按钮和错误信息 -->
+        <button id="generateButton" onclick="generateCodes()"
+                class="w-full py-3 mb-4 text-white bg-indigo-600 rounded-lg shadow-md hover:bg-indigo-700 transition duration-150 ease-in-out font-semibold text-lg
+                       focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50">
+            生成编码
+        </button>
+
+        <div id="errorMessage" class="text-red-600 text-sm mb-4 p-2 bg-red-100 rounded-lg hidden"></div>
+
+        <!-- 结果展示区 -->
+        <h2 class="text-xl font-semibold text-gray-700 mt-8 mb-4 border-b pb-2">生成结果 (已去重并排序)</h2>
+        <textarea id="outputArea" rows="10" readonly
+                  class="w-full p-4 text-gray-800 bg-gray-50 border border-gray-300 rounded-lg shadow-inner focus:outline-none resize-none"></textarea>
+                  
+        <!-- 新增：LLM 功能按钮 -->
+        <button id="interpretButton" onclick="handleInterpretCode()" disabled
+                class="w-full py-3 mt-4 text-indigo-600 border border-indigo-600 bg-white rounded-lg shadow-md hover:bg-indigo-50 transition duration-150 ease-in-out font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed
+                       focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50">
+            ✨ 解释编码结构 (LLM 分析)
+        </button>
+
     </div>
+
+    <!-- 模态框用于显示 LLM 结果和加载状态 -->
+    <div id="interpretationModal" class="modal-backdrop hidden">
+        <div class="bg-white p-8 rounded-xl shadow-2xl max-w-lg w-full m-4">
+            <h2 id="modalTitle" class="text-2xl font-bold text-gray-800 mb-4">编码结构分析</h2>
+            
+            <!-- 加载状态 -->
+            <div id="loadingIndicator" class="flex items-center justify-center space-x-2 py-8 hidden">
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span class="text-indigo-600 font-medium">正在进行 LLM 结构分析...</span>
+            </div>
+
+            <!-- 结果内容 -->
+            <div id="interpretationContent">
+                <p id="systemNameOutput" class="text-lg font-semibold text-gray-700 mb-4"></p>
+                <div id="partsDetail" class="space-y-4">
+                    <!-- 动态插入位置解释 -->
+                </div>
+            </div>
+
+            <!-- 模态框底部按钮 -->
+            <div class="mt-6 pt-4 border-t flex justify-end">
+                <button onclick="closeModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
+                    关闭
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 定义 Gemini API 常量
+        const GEMINI_MODEL = "gemini-2.5-flash-preview-09-2025";
+        const API_KEY = ""; // Canvas Runtime will inject the key
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${API_KEY}`;
+
+        // JSON Schema for structured output
+        const INTERPRETATION_SCHEMA = {
+            type: "OBJECT",
+            properties: {
+                "code": { "type": "STRING", "description": "The input code string." },
+                "systemName": { "type": "STRING", "description": "A plausible name for the hypothetical system (e.g., 'Warehouse Inventory System', 'Project Classification')." },
+                "partsInterpretation": {
+                    "type": "ARRAY",
+                    "items": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "position": { "type": "NUMBER", "description": "Position index (1, 2, 3, etc.)." },
+                            "value": { "type": "STRING", "description": "The value extracted from the code for this position." },
+                            "meaning": { "type": "STRING", "description": "A plausible, creative explanation of what this value represents in the hypothetical system, based on the context." }
+                        },
+                        "propertyOrdering": ["position", "value", "meaning"]
+                    }
+                }
+            },
+            propertyOrdering: ["code", "systemName", "partsInterpretation"]
+        };
+        
+        // 动态位置配置存储
+        let positionRanges = [];
+        let nextPositionId = 1;
+        const MAX_POSITIONS = 6;
+        const MIN_POSITIONS = 1;
+
+        // 初始化函数
+        window.onload = function() {
+            // 默认添加 3 个位置
+            for (let i = 0; i < 3; i++) {
+                addPosition(true);
+            }
+            // 设置初始值
+            document.getElementById('rangeMin1').value = 1;
+            document.getElementById('rangeMax1').value = 59;
+            document.getElementById('rangeMin2').value = 1;
+            document.getElementById('rangeMax2').value = 6;
+            document.getElementById('rangeMin3').value = 1;
+            document.getElementById('rangeMax3').value = 2;
+            updateControls();
+        };
+
+        /**
+         * 渲染单个位置的输入框。
+         * @param {number} id - 位置的唯一 ID。
+         * @param {number} index - 位置的序号 (从 1 开始)。
+         * @returns {string} HTML 字符串。
+         */
+        function renderPosition(id, index) {
+            const colorClass = ['bg-blue-50 border-blue-200 text-blue-800', 'bg-green-50 border-green-200 text-green-800', 'bg-yellow-50 border-yellow-200 text-yellow-800'][index % 3];
+            
+            return `
+                <div id="pos-${id}" data-index="${index}" class="p-4 rounded-lg border ${colorClass}">
+                    <h3 class="text-base font-semibold mb-2">位置 ${index + 1} (范围)</h3>
+                    <div class="flex space-x-3">
+                        <input type="number" id="rangeMin${id}" value="1" min="1" placeholder="最小值" 
+                            class="block w-1/2 rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500 focus:border-indigo-500">
+                        <input type="number" id="rangeMax${id}" value="10" min="1" placeholder="最大值" 
+                            class="block w-1/2 rounded-md border-gray-300 shadow-sm p-2 border focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                </div>
+            `;
+        }
+
+        /**
+         * 添加一个新的位置。
+         * @param {boolean} isInitial - 是否为初始化调用。
+         */
+        function addPosition(isInitial = false) {
+            if (positionRanges.length >= MAX_POSITIONS) {
+                if (!isInitial) displayMessage("最多只能设置 6 个位置。", true);
+                return;
+            }
+
+            const newId = nextPositionId++;
+            const newIndex = positionRanges.length; // 0-based index is the future position index
+            
+            const rangesContainer = document.getElementById('rangesContainer');
+            const html = renderPosition(newId, newIndex);
+            rangesContainer.insertAdjacentHTML('beforeend', html);
+
+            // 将新的位置对象添加到数组，但不包含当前的 min/max 值 (读取 UI 值由 getActiveRanges 负责)
+            positionRanges.push({ id: newId, name: `位置 ${newIndex + 1}` });
+            
+            updateControls();
+        }
+
+        /**
+         * 移除最后一个位置。
+         */
+        function removePosition() {
+            if (positionRanges.length <= MIN_POSITIONS) {
+                displayMessage("至少需要保留 1 个位置。", true);
+                return;
+            }
+
+            const lastRange = positionRanges.pop();
+            const element = document.getElementById(`pos-${lastRange.id}`);
+            if (element) {
+                element.remove();
+            }
+
+            updateControls();
+        }
+
+        /**
+         * 更新控制按钮的状态和位置计数显示。
+         */
+        function updateControls() {
+            const count = positionRanges.length;
+            document.getElementById('positionCount').textContent = `当前位置数: ${count}`;
+            document.getElementById('addPositionButton').disabled = count >= MAX_POSITIONS;
+            document.getElementById('removePositionButton').disabled = count <= MIN_POSITIONS;
+        }
+
+        /**
+         * 获取当前所有位置的配置范围，并进行校验。
+         * @returns {Array|null} 包含所有有效范围对象的数组，或在校验失败时返回 null。
+         */
+        function getActiveRanges() {
+            const activeRanges = [];
+            let isValid = true;
+            
+            positionRanges.forEach((range, index) => {
+                const minInput = document.getElementById(`rangeMin${range.id}`);
+                const maxInput = document.getElementById(`rangeMax${range.id}`);
+                
+                const min = parseInt(minInput.value, 10);
+                const max = parseInt(maxInput.value, 10);
+                
+                if (isNaN(min) || isNaN(max) || min <= 0 || max <= 0) {
+                    displayMessage(`位置 ${index + 1} 的最小值和最大值必须是正整数。`, true);
+                    isValid = false;
+                    return;
+                }
+                if (min > max) {
+                    displayMessage(`位置 ${index + 1} 的最小值 (${min}) 不能大于最大值 (${max})。`, true);
+                    isValid = false;
+                    return;
+                }
+
+                activeRanges.push({ 
+                    index: index + 1, // 1-based index
+                    min: min, 
+                    max: max, 
+                    id: range.id 
+                });
+            });
+
+            return isValid ? activeRanges : null;
+        }
+
+
+        /**
+         * 辅助函数：显示消息（替代 alert）
+         * @param {string} message - 要显示的消息
+         * @param {boolean} isError - 是否为错误消息
+         */
+        function displayMessage(message, isError = false) {
+            const outputArea = document.getElementById('outputArea');
+            const errorDiv = document.getElementById('errorMessage');
+
+            if (isError) {
+                errorDiv.textContent = message;
+                errorDiv.classList.remove('hidden');
+                outputArea.value = ''; // 清空输出区
+            } else {
+                errorDiv.classList.add('hidden');
+                outputArea.value = message;
+            }
+            
+            // 结果出来后，启用 LLM 按钮
+            const interpretButton = document.getElementById('interpretButton');
+            if (!isError && message.length > 0) {
+                interpretButton.disabled = false;
+            } else {
+                interpretButton.disabled = true;
+            }
+        }
+
+        /**
+         * 核心生成逻辑，与 Python 中的 random.randint(min, max) 等效。
+         * @param {number} min - 范围最小值（包含）
+         * @param {number} max - 范围最大值（包含）
+         * @returns {number} 随机整数
+         */
+        function getRandomIntInclusive(min, max) {
+            min = Math.ceil(min);
+            max = Math.floor(max);
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        /**
+         * 从输入字段中获取整数值。
+         * @param {string} id - 输入字段的 ID
+         * @returns {number} 整数值
+         */
+        function getIntValue(id) {
+            return parseInt(document.getElementById(id).value, 10);
+        }
+
+        /**
+         * 主函数：读取配置，生成编码，去重，排序并显示结果。
+         */
+        function generateCodes() {
+            const numCodes = getIntValue('numCodes');
+            const prefix = document.getElementById('prefix').value.trim();
+            
+            const activeRanges = getActiveRanges();
+            if (!activeRanges) return; // 校验失败
+
+            // 1. 输入校验
+            if (isNaN(numCodes) || numCodes <= 0) {
+                displayMessage("请设置有效的生成数量 (大于 0)。", true);
+                return;
+            }
+
+            // 2. 核心生成逻辑 (Unique Codes)
+            const generatedData = [];
+            const generatedCodesSet = new Set();
+            let attempts = 0;
+            const MAX_ATTEMPTS_FACTOR = 5; // 安全因子，防止无限循环
+            const maxAttempts = numCodes * MAX_ATTEMPTS_FACTOR;
+            
+            // 检查是否有位置 2 (用于排序)
+            const hasP2 = activeRanges.length >= 2;
+
+            // 计算最大可能组合数 (用于警告)
+            let maxCombinations = 1;
+            activeRanges.forEach(range => {
+                maxCombinations *= (range.max - range.min + 1);
+            });
+            
+            if (numCodes > maxCombinations) {
+                 displayMessage(`错误：请求的生成数量 (${numCodes}) 大于唯一组合的最大可能数量 (${maxCombinations})。请调整您的范围或减少数量。`, true);
+                 return;
+            }
+
+            while (generatedData.length < numCodes && attempts < maxAttempts) {
+                attempts++;
+                
+                try {
+                    const parts = [];
+                    let p1Value = 0; // 用于排序 (位置 1)
+                    let p2Value = undefined; // 用于二次排序 (位置 2)
+                    
+                    activeRanges.forEach((range, index) => {
+                        const pValue = getRandomIntInclusive(range.min, range.max);
+                        parts.push(pValue);
+                        
+                        if (index === 0) {
+                            p1Value = pValue; 
+                        } else if (index === 1) {
+                            p2Value = pValue; // 记录 P2 用于排序
+                        }
+                    });
+
+                    // 组合编码：PREFIX<P1>-<P2>-<P3>...
+                    const code = `${prefix}${parts.join('-')}`;
+                    
+                    if (!generatedCodesSet.has(code)) {
+                        generatedCodesSet.add(code);
+                        const dataEntry = { p1Value: p1Value, code: code };
+                        if (hasP2) {
+                            dataEntry.p2Value = p2Value;
+                        }
+                        generatedData.push(dataEntry);
+                    }
+                } catch (e) {
+                    displayMessage(`生成过程中发生错误: ${e.message}`, true);
+                    return;
+                }
+            }
+            
+            if (generatedData.length < numCodes) {
+                // 如果在达到安全限制次数后仍未生成足够的编码
+                displayMessage(`警告：无法生成 ${numCodes} 个不重复的编码。在 ${attempts} 次尝试后，仅生成了 ${generatedData.length} 个不重复编码。请检查您的范围设置（最大组合数约为 ${maxCombinations}）。`, true);
+                return;
+            }
+
+            // 3. 排序 (根据 p1Value 升序，如果 p1Value 相同，则根据 p2Value 升序)
+            generatedData.sort((a, b) => {
+                // Primary sort: P1
+                if (a.p1Value !== b.p1Value) {
+                    return a.p1Value - b.p1Value;
+                }
+
+                // Secondary sort: P2 (仅当位置数大于等于 2 时启用)
+                if (hasP2) {
+                    return a.p2Value - b.p2Value;
+                }
+                
+                // Fallback: 如果 P1 相同且没有 P2，则顺序不变。
+                return 0;
+            });
+
+            // 4. 提取排序后的编码字符串并显示结果
+            const sortedCodes = generatedData.map(data => data.code);
+            const outputText = sortedCodes.join('\n');
+            displayMessage(outputText, false);
+        }
+
+
+        /**
+         * 辅助函数：打开模态框
+         */
+        function openModal() {
+            document.getElementById('interpretationModal').classList.remove('hidden');
+        }
+
+        /**
+         * 辅助函数：关闭模态框
+         */
+        function closeModal() {
+            document.getElementById('interpretationModal').classList.add('hidden');
+        }
+
+        /**
+         * 辅助函数：显示加载状态
+         */
+        function showLoading(show) {
+            document.getElementById('loadingIndicator').classList.toggle('hidden', !show);
+            document.getElementById('interpretationContent').classList.toggle('hidden', show);
+            document.getElementById('modalTitle').textContent = show ? '正在分析...' : '编码结构分析';
+        }
+
+
+        /**
+         * 处理 LLM 编码结构解释的逻辑。
+         */
+        function handleInterpretCode() {
+            const outputArea = document.getElementById('outputArea');
+            const codes = outputArea.value.trim().split('\n').filter(c => c.length > 0);
+            
+            if (codes.length === 0) {
+                displayMessage("请先生成编码。", true);
+                return;
+            }
+
+            const activeRanges = getActiveRanges();
+            if (!activeRanges) return;
+            const numPositions = activeRanges.length;
+
+            // 总是选择列表中的第一个编码进行分析
+            const selectedCode = codes[0];
+            
+            // 动态构建正则表达式来匹配所有位置的值
+            // 匹配格式: PREFIX<P1>-<P2>-...-<PN>
+            const patternParts = activeRanges.map(() => '([0-9]+)').join('-');
+            // (.*?) 匹配前缀, 然后是 N 个 ([0-9]+) 组，用 '-' 连接
+            const regex = new RegExp(`(.*?)${patternParts}$`); 
+            
+            const codeParts = selectedCode.match(regex);
+            
+            if (!codeParts || codeParts.length !== numPositions + 2) { // 组 1: 前缀, 组 2..N+1: N个位置的值
+                displayMessage("无法解析所选编码的结构，请确保格式正确，并且至少包含一个数字位置。", true);
+                return;
+            }
+            
+            // 构造 LLM 提示词
+            let prompt = `
+                请扮演一位富有想象力的系统分析师。
+                当前编码系统遵循 PREFIX<P1>-<P2>-...-<PN> 的格式。
+                请根据以下 ${numPositions} 个位置的数值范围和抽取的值，构建一个 plausible 的系统背景，并解释每个位置的含义。
+                
+                - 完整编码: ${selectedCode}
+                - 结构说明:
+            `;
+
+            const partsData = [];
+            // codeParts[1] 是前缀，codeParts[2] 是 P1，以此类推
+            for (let i = 0; i < numPositions; i++) {
+                const pValue = codeParts[i + 2];
+                const range = activeRanges[i];
+                
+                prompt += `
+                - 位置 ${i + 1} (P${i + 1}) 的值是 ${pValue}，其范围是 ${range.min} 到 ${range.max}。`;
+                
+                // 收集用于 JSON 结构的中间数据
+                partsData.push({
+                    position: i + 1,
+                    value: pValue
+                });
+            }
+            
+            prompt += `
+                请以中文返回一个 JSON 对象，其中包含一个 SystemName（系统名称）和 PartsInterpretation（每个位置的解释）。
+            `;
+
+            openModal();
+            showLoading(true);
+            interpretCodeStructure(prompt);
+        }
+
+        /**
+         * 调用 Gemini API 进行编码结构解释
+         * @param {string} prompt - 发送给 LLM 的提示
+         */
+        async function interpretCodeStructure(prompt) {
+            const systemPrompt = "你是一位专业的系统分析师，负责创建和解释复杂编码系统的结构和含义。请使用中文和提供的 JSON schema 返回结果。";
+            
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: INTERPRETATION_SCHEMA
+                }
+            };
+
+            const maxRetries = 3;
+            let lastError = null;
+
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorBody = await response.text();
+                        throw new Error(`API Request Failed: ${response.status} - ${errorBody}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!jsonText) {
+                        throw new Error("LLM returned no content or invalid structure.");
+                    }
+                    
+                    const interpretation = JSON.parse(jsonText);
+                    
+                    renderInterpretation(interpretation);
+                    return; // 成功，退出循环
+                } catch (error) {
+                    lastError = error;
+                    if (attempt < maxRetries - 1) {
+                        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+            }
+            
+            // 达到最大重试次数
+            showLoading(false);
+            document.getElementById('interpretationContent').innerHTML = `
+                <p class="text-red-600">抱歉，无法连接到分析服务或服务返回错误。</p>
+                <p class="text-xs text-gray-500 mt-2">错误详情: ${lastError.message}</p>
+            `;
+        }
+
+        /**
+         * 将 LLM 返回的 JSON 结构渲染到模态框中
+         * @param {object} data - LLM 返回的结构化数据
+         */
+        function renderInterpretation(data) {
+            showLoading(false);
+            
+            document.getElementById('modalTitle').textContent = `编码分析: ${data.code}`;
+            document.getElementById('systemNameOutput').textContent = `假设系统名称: ${data.systemName}`;
+            
+            const partsDetail = document.getElementById('partsDetail');
+            partsDetail.innerHTML = ''; // 清空旧内容
+
+            data.partsInterpretation.forEach(part => {
+                const element = document.createElement('div');
+                element.className = 'p-3 bg-gray-50 border border-gray-200 rounded-lg';
+                element.innerHTML = `
+                    <p class="text-sm font-medium text-gray-900">
+                        <span class="text-indigo-600 font-bold">位置 ${part.position}</span> (值: ${part.value})
+                    </p>
+                    <p class="text-gray-600 mt-1">${part.meaning}</p>
+                `;
+                partsDetail.appendChild(element);
+            });
+        }
+    </script>
 </body>
 </html>
