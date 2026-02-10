@@ -1,0 +1,22 @@
+let timeLeft = 25 * 60; // 25分钟转换为秒
+let timerInterval;
+
+function startTimer() {
+  timerInterval = setInterval(() => {
+    timeLeft--; // 每秒减一
+    updateDisplay(); // 更新页面显示的时间
+
+    if (timeLeft === 0) {
+      clearInterval(timerInterval);
+      alert("时间到！休息一下吧。");
+    }
+  }, 1000);
+}
+
+function updateDisplay() {
+  const minutes = Math.floor(timeLeft / 60);
+  const seconds = timeLeft % 60;
+  // 将时间格式化为 00:00 样式并显示在网页上
+  document.getElementById('timer').textContent = 
+    `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+}
